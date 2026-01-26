@@ -4,6 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 
+type TopicDoc = {
+  title?: unknown;
+  order?: unknown;
+  archived?: unknown;
+  isSystem?: unknown;
+  openChapterId?: unknown;
+};
+
 type Topic = {
   id: string;
   title: string;
@@ -15,10 +23,23 @@ type Topic = {
 
 const PROJECT_ID = "default";
 
+function toBool(v: unknown, fallback = false): boolean {
+  return typeof v === "boolean" ? v : fallback;
+}
+
+function toNum(v: unknown, fallback = 999): number {
+  return typeof v === "number" ? v : fallback;
+}
+
+function toStr(v: unknown, fallback: string): string {
+  return typeof v === "string" && v.trim().length ? v : fallback;
+}
+
 export default function Home() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   const activeTopic = useMemo(
     () => topics.find((t) => t.id === activeTopicId) || null,
     [topics, activeTopicId]
@@ -35,15 +56,17 @@ export default function Home() {
           orderBy("order", "asc")
         );
         const snap = await getDocs(q);
+
         const rows: Topic[] = snap.docs.map((d) => {
-          const data = d.data() as any;
+          const data = d.data() as TopicDoc;
           return {
             id: d.id,
-            title: String(data.title ?? d.id),
-            order: Number(data.order ?? 999),
-            archived: Boolean(data.archived ?? false),
-            isSystem: Boolean(data.isSystem ?? false),
-            openChapterId: (data.openChapterId ?? null) as string | null,
+            title: toStr(data.title, d.id),
+            order: toNum(data.order, 999),
+            archived: toBool(data.archived, false),
+            isSystem: toBool(data.isSystem, false),
+            openChapterId:
+              typeof data.openChapterId === "string" ? data.openChapterId : null,
           };
         });
 
@@ -53,8 +76,9 @@ export default function Home() {
           setTopics(visible);
           if (!activeTopicId && visible.length) setActiveTopicId(visible[0].id);
         }
-      } catch (e: any) {
-        if (!cancelled) setError(e?.message || "Failed to load topics");
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Failed to load topics";
+        if (!cancelled) setError(msg);
       }
     }
 
@@ -83,6 +107,7 @@ export default function Home() {
           <div className="space-y-1">
             {topics.map((t) => {
               const active = t.id === activeTopicId;
+              const isCore = t.id === "runway" || t.id === "partner" || t.id === "kids";
               return (
                 <button
                   key={t.id}
@@ -97,7 +122,7 @@ export default function Home() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{t.title}</span>
-                    {t.id === "runway" || t.id === "partner" || t.id === "kids" ? (
+                    {isCore ? (
                       <span className="ml-2 rounded-full bg-neutral-700/60 px-2 py-0.5 text-[10px] text-neutral-200">
                         core
                       </span>
@@ -114,15 +139,18 @@ export default function Home() {
         </aside>
 
         {/* Center lane */}
-        <section className="flex-1 rounded-2xl bg-neutral-900/40 p-6 shadow">
-          <div className="text-sm text-neutral-300">Active topic</div>
-          <div className="mt-1 text-2xl font-semibold">
-            {activeTopic ? activeTopic.title : "—"}
-          </div>
+        <section className="flex-1 overflow-hidden rounded-2xl bg-neutral-900/40 shadow">
+          <header className="border-b border-neutral-800/60 bg-neutral-950/40 px-6 py-4">
+            <div className="text-xs text-neutral-400">ProjectSolo</div>
+            <div className="mt-1 text-base font-semibold text-neutral-100">
+              {activeTopic ? activeTopic.title : "—"}
+            </div>
+          </header>
 
-          <div className="mt-6 rounded-xl bg-neutral-950/40 p-4 text-sm text-neutral-200">
-            Next: show this topic’s chapters, then wire “new chapter” + “close
-            chapter”.
+          <div className="p-6">
+            <div className="mt-2 rounded-xl bg-neutral-950/40 p-4 text-sm text-neutral-200">
+              Next: show this topic’s chapters, then wire “new chapter” + “close chapter”.
+            </div>
           </div>
         </section>
       </div>
