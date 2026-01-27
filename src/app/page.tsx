@@ -383,7 +383,7 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="w-[360px] border-l border-neutral-800/60">
+          <div className="w-[260px] border-l border-neutral-800/60">
             <header className="border-b border-neutral-800/60 bg-black/40 px-6 py-4">
               <div className="text-xs text-neutral-400">Topic</div>
               <div className="mt-1 text-base font-semibold text-neutral-100">
@@ -410,7 +410,7 @@ export default function Home() {
                 </button>
               </div>
 
-              <div className="mt-3 space-y-2">
+              <div className="space-y-2">
                 {chapters.length === 0 ? (
                   <div className="rounded-xl bg-neutral-950/40 p-4 text-sm text-neutral-300">
                     No chapters yet for this topic.
