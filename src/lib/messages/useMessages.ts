@@ -58,7 +58,7 @@ export function useMessages(params: {
     const unsub = onSnapshot(
       q,
       (snap: QuerySnapshot<DocumentData>) => {
-        const next: Message[] = snap.docs.map((d) => d.data() as Message);
+        const next: Message[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Message, "id">) }));
         setMessages(next);
         setError(null);
       },
