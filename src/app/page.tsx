@@ -15,6 +15,10 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { ChapterTitle } from "@/components/chapters/ChapterTitle";
+import { ActiveRun } from "@/components/runs/ActiveRun";
+import { MessageList } from "@/components/messages/MessageList";
+import { MessageComposer } from "@/components/messages/MessageComposer";
+import { useRuns } from "@/lib/runs/useRuns";
 
 type TopicDoc = {
   title?: unknown;
@@ -88,6 +92,16 @@ export default function Home() {
     () => topics.find((t) => t.id === activeTopicId) || null,
     [topics, activeTopicId]
   );
+
+  const activeChapterId = activeTopic?.openChapterId ?? null;
+
+  const { runs } = useRuns({
+    topicId: activeTopicId ?? undefined,
+    chapterId: activeChapterId ?? undefined,
+  });
+
+  // Canonical invariant for v0: one run per open chapter. Use newest run.
+  const activeRunId = runs && runs.length > 0 ? runs[0].id : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -260,7 +274,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-black text-white">
       <div className="mx-auto flex min-h-screen max-w-6xl gap-6 px-6 py-10">
-        {/* Left lane */}
+        {/* Topics lane */}
         <aside className="w-[280px] rounded-2xl bg-neutral-900/70 p-4 shadow">
           <div className="mb-3 text-sm font-semibold tracking-wide text-neutral-200">
             ProjectSolo
@@ -306,108 +320,152 @@ export default function Home() {
           </div>
         </aside>
 
-        {/* Center lane */}
-        <section className="flex-1 overflow-hidden rounded-2xl bg-neutral-900/40 shadow">
-          <header className="border-b border-neutral-800/60 bg-neutral-950/40 px-6 py-4">
-            <div className="text-xs text-neutral-400">ProjectSolo</div>
-            <div className="mt-1 text-base font-semibold text-neutral-100">
-              {activeTopic ? activeTopic.title : "—"}
-            </div>
-          </header>
+        {/* Middle + Right lanes */}
+        <section className="flex flex-1 overflow-hidden rounded-2xl bg-neutral-900/40 shadow">
+          {/* Chapters lane */}
+          <div className="w-[380px] border-r border-neutral-800/60">
+            <header className="border-b border-neutral-800/60 bg-neutral-950/40 px-6 py-4">
+              <div className="text-xs text-neutral-400">ProjectSolo</div>
+              <div className="mt-1 text-base font-semibold text-neutral-100">
+                {activeTopic ? activeTopic.title : "—"}
+              </div>
+            </header>
 
-          <div className="p-6">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold text-neutral-200">Chapters</div>
+            <div className="p-6">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold text-neutral-200">Chapters</div>
 
-              <button
-                type="button"
-                onClick={createNewChapter}
-                disabled={!activeTopicId || busy}
-                className={[
-                  "rounded-xl px-3 py-2 text-sm font-semibold transition",
-                  !activeTopicId || busy
-                    ? "bg-neutral-800/40 text-neutral-500"
-                    : "bg-white text-black hover:bg-neutral-200",
-                ].join(" ")}
-              >
-                {busy ? "Creating…" : "New chapter"}
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={createNewChapter}
+                  disabled={!activeTopicId || busy}
+                  className={[
+                    "rounded-xl px-3 py-2 text-sm font-semibold transition",
+                    !activeTopicId || busy
+                      ? "bg-neutral-800/40 text-neutral-500"
+                      : "bg-white text-black hover:bg-neutral-200",
+                  ].join(" ")}
+                >
+                  {busy ? "Creating…" : "New chapter"}
+                </button>
+              </div>
 
-            <div className="mt-3 space-y-2">
-              {chapters.length === 0 ? (
-                <div className="rounded-xl bg-neutral-950/40 p-4 text-sm text-neutral-300">
-                  No chapters yet for this topic.
-                </div>
-              ) : (
-                chapters.map((c) => {
-                  const isOpen = c.status === "open";
-                  const isActive = activeTopic?.openChapterId === c.id;
+              <div className="mt-3 space-y-2">
+                {chapters.length === 0 ? (
+                  <div className="rounded-xl bg-neutral-950/40 p-4 text-sm text-neutral-300">
+                    No chapters yet for this topic.
+                  </div>
+                ) : (
+                  chapters.map((c) => {
+                    const isOpen = c.status === "open";
+                    const isActive = activeTopic?.openChapterId === c.id;
 
-                  // Back-compat: older titles included a timestamp suffix like "Topic — 1/26/..."
-                  const parts = c.title.split(" — ");
-                  const baseTitle = parts[0] || c.title;
-                  const legacyStamp = parts.length > 1 ? parts.slice(1).join(" — ") : null;
+                    // Back-compat: older titles included a timestamp suffix like "Topic — 1/26/..."
+                    const parts = c.title.split(" — ");
+                    const baseTitle = parts[0] || c.title;
+                    const legacyStamp =
+                      parts.length > 1 ? parts.slice(1).join(" — ") : null;
 
-                  const createdLabel = formatCreatedAt(c.createdAt) || legacyStamp;
+                    const createdLabel = formatCreatedAt(c.createdAt) || legacyStamp;
 
-                  return (
-                    <div
-                      key={c.id}
-                      className={[
-                        "rounded-xl border p-4 text-sm",
-                        isActive
-                          ? "border-white/40 bg-white/10"
-                          : "border-neutral-800/60 bg-neutral-950/30",
-                      ].join(" ")}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-medium text-neutral-100">
-                          <ChapterTitle
-                            topicId={activeTopicId as string}
-                            chapterId={c.id}
-                            title={baseTitle}
-                            disabled={!activeTopicId}
-                            onRenamed={(nextTitle) => {
-                              setChapters((prev) =>
-                                prev.map((x) =>
-                                  x.id === c.id ? { ...x, title: nextTitle } : x
-                                )
-                              );
-                            }}
-                          />
-                        </div>
+                    return (
+                      <div
+                        key={c.id}
+                        className={[
+                          "rounded-xl border p-4 text-sm",
+                          isActive
+                            ? "border-white/40 bg-white/10"
+                            : "border-neutral-800/60 bg-neutral-950/30",
+                        ].join(" ")}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium text-neutral-100">
+                            <ChapterTitle
+                              topicId={activeTopicId as string}
+                              chapterId={c.id}
+                              title={baseTitle}
+                              disabled={!activeTopicId}
+                              onRenamed={(nextTitle) => {
+                                setChapters((prev) =>
+                                  prev.map((x) =>
+                                    x.id === c.id ? { ...x, title: nextTitle } : x
+                                  )
+                                );
+                              }}
+                            />
+                          </div>
 
-                        <div className="flex items-center gap-2">
-                          {isActive ? (
-                            <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-black">
-                              active
+                          <div className="flex items-center gap-2">
+                            {isActive ? (
+                              <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-black">
+                                active
+                              </span>
+                            ) : null}
+
+                            <span
+                              className={[
+                                "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                                isOpen
+                                  ? "bg-emerald-500/20 text-emerald-200"
+                                  : "bg-neutral-700/50 text-neutral-200",
+                              ].join(" ")}
+                            >
+                              {c.status}
                             </span>
-                          ) : null}
-
-                          <span
-                            className={[
-                              "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                              isOpen
-                                ? "bg-emerald-500/20 text-emerald-200"
-                                : "bg-neutral-700/50 text-neutral-200",
-                            ].join(" ")}
-                          >
-                            {c.status}
-                          </span>
+                          </div>
                         </div>
+
+                        {createdLabel ? (
+                          <div className="mt-1 text-xs text-neutral-400">
+                            {createdLabel}
+                          </div>
+                        ) : null}
+
+                        <div className="mt-2 text-xs text-neutral-400">id: {c.id}</div>
                       </div>
-
-                      {createdLabel ? (
-                        <div className="mt-1 text-xs text-neutral-400">{createdLabel}</div>
-                      ) : null}
-
-                      <div className="mt-2 text-xs text-neutral-400">id: {c.id}</div>
-                    </div>
-                  );
-                })
-              )}
+                    );
+                  })
+                )}
+              </div>
             </div>
+          </div>
+
+          {/* Work lane (always visible) */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <header className="border-b border-neutral-800/60 bg-neutral-950/40 px-6 py-4">
+              <div className="text-xs text-neutral-400">Run</div>
+              <div className="mt-1 text-sm font-semibold text-neutral-100">
+                {activeTopic ? activeTopic.title : "—"}
+                {activeChapterId ? " / " + activeChapterId : ""}
+              </div>
+            </header>
+
+            {!activeTopicId || !activeChapterId ? (
+              <div className="flex-1 p-6 text-sm text-neutral-300">
+                Select a topic to load its open chapter.
+              </div>
+            ) : (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <ActiveRun
+                  topicId={activeTopicId}
+                  chapterId={activeChapterId}
+                  activeRunId={activeRunId}
+                  onRunStarted={() => {}}
+                />
+                <div className="min-h-0 flex-1 overflow-auto">
+                  <MessageList
+                    topicId={activeTopicId}
+                    chapterId={activeChapterId}
+                    runId={activeRunId ?? undefined}
+                  />
+                </div>
+                <MessageComposer
+                  topicId={activeTopicId}
+                  chapterId={activeChapterId}
+                  runId={activeRunId ?? undefined}
+                />
+              </div>
+            )}
           </div>
         </section>
       </div>
