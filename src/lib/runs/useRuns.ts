@@ -50,7 +50,10 @@ export function useRuns(params: { topicId?: string; chapterId?: string }) {
     const unsub = onSnapshot(
       q,
       (snap: QuerySnapshot<DocumentData>) => {
-        const next: Run[] = snap.docs.map((d) => d.data() as Run);
+        const next: Run[] = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<Run, "id">),
+        }));
         setRuns(next);
         setError(null);
       },

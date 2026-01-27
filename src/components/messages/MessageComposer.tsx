@@ -19,7 +19,8 @@ export function MessageComposer(props: MessageComposerProps) {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!enabled) return;
-    if (!value.trim()) return;
+    const next = value.trim();
+    if (!next) return;
 
     setSubmitting(true);
     try {
@@ -28,7 +29,7 @@ export function MessageComposer(props: MessageComposerProps) {
         chapterId: chapterId as string,
         runId: runId as string,
         role: "human",
-        content: value.trim(),
+        content: next,
       });
       setValue("");
     } finally {
@@ -36,21 +37,25 @@ export function MessageComposer(props: MessageComposerProps) {
     }
   }
 
-  if (!enabled) return null;
+  const disabled = !enabled || submitting;
 
   return (
-    <form onSubmit={onSubmit} className="border-t p-3 flex gap-2">
+    <form
+      onSubmit={onSubmit}
+      className="border-t border-neutral-800/60 bg-neutral-950/30 p-3 flex gap-2"
+    >
       <textarea
         value={value}
         onChange={(e) => setValue(e.target.value)}
         rows={2}
-        placeholder="Write a message…"
-        className="flex-1 resize-none rounded-md border px-3 py-2 text-sm"
+        disabled={disabled}
+        placeholder={enabled ? "Write a message…" : "Preparing run…"}
+        className="flex-1 resize-none rounded-md border border-neutral-800/60 bg-black/20 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 disabled:opacity-60"
       />
       <button
         type="submit"
-        disabled={submitting}
-        className="rounded-md border px-3 py-2 text-sm"
+        disabled={disabled || !value.trim()}
+        className="rounded-md border border-neutral-800/60 bg-white/10 px-3 py-2 text-sm text-neutral-100 disabled:opacity-50"
       >
         Send
       </button>
