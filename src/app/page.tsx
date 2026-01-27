@@ -287,7 +287,7 @@ export default function Home() {
     <main className="h-screen overflow-hidden bg-black text-white">
       <div className="mx-auto flex h-screen max-w-6xl gap-6 px-6 py-10">
         {/* Topics lane */}
-        <aside className="w-[280px] rounded-2xl bg-neutral-900/70 p-4 shadow">
+        <aside className="w-[260px] rounded-2xl border border-neutral-800/60 bg-neutral-950/40 p-4">
           <div className="mb-3 text-sm font-semibold tracking-wide text-neutral-200">
             ProjectSolo
           </div>
@@ -333,10 +333,10 @@ export default function Home() {
         </aside>
 
         {/* Middle + Right lanes */}
-        <section className="flex flex-1 overflow-hidden rounded-2xl bg-neutral-900/40 shadow">
+        <section className="flex flex-1 overflow-hidden rounded-2xl border border-neutral-800/60 bg-neutral-950/30">
           {/* Chapters lane */}
           <div className="w-[380px] border-r border-neutral-800/60">
-            <header className="border-b border-neutral-800/60 bg-neutral-950/40 px-6 py-4">
+            <header className="border-b border-neutral-800/60 bg-black/40 px-6 py-4">
               <div className="text-xs text-neutral-400">ProjectSolo</div>
               <div className="mt-1 text-base font-semibold text-neutral-100">
                 {activeTopic ? activeTopic.title : "—"}
@@ -443,7 +443,7 @@ export default function Home() {
 
           {/* Work lane (always visible + always on) */}
           <div className="flex min-w-0 min-h-0 flex-1 flex-col overflow-hidden">
-            <header className="border-b border-neutral-800/60 bg-neutral-950/40 px-6 py-4">
+            <header className="border-b border-neutral-800/60 bg-black/40 px-6 py-4">
               <div className="text-xs text-neutral-400">Run</div>
               <div className="mt-1 text-sm font-semibold text-neutral-100">
                 {activeTopic ? activeTopic.title : "Inbox"}
