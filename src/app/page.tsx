@@ -2,11 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  addDoc,
   collection,
+  doc,
   getDocs,
+  limit,
   orderBy,
   query,
-  limit,
+  serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 
@@ -65,6 +69,7 @@ export default function Home() {
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const activeTopic = useMemo(
     () => topics.find((t) => t.id === activeTopicId) || null,
@@ -100,7 +105,7 @@ export default function Home() {
 
         if (!cancelled) {
           setTopics(visible);
-          if (!activeTopicId && visible.length) setActiveTopicId(visible[0].id);
+          setActiveTopicId((prev) => (prev ? prev : visible.length ? visible[0].id : null));
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Failed to load topics";
@@ -112,7 +117,6 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -162,6 +166,81 @@ export default function Home() {
       cancelled = true;
     };
   }, [activeTopicId]);
+
+  async function createNewChapter() {
+    if (!activeTopicId || !activeTopic) return;
+    if (busy) return;
+
+    setBusy(true);
+    setError(null);
+
+    try {
+      const nowLabel = new Date().toLocaleString();
+      const title = `${activeTopic.title} — ${nowLabel}`;
+
+      const chaptersCol = collection(
+        db,
+        "projectSolo",
+        PROJECT_ID,
+        "topics",
+        activeTopicId,
+        "chapters"
+      );
+
+      const newRef = await addDoc(chaptersCol, {
+        title,
+        topicId: activeTopicId,
+        status: "open",
+        createdAt: serverTimestamp(),
+        closedAt: null,
+      });
+
+      const prevOpenId = activeTopic.openChapterId;
+
+      if (prevOpenId) {
+        await updateDoc(
+          doc(
+            db,
+            "projectSolo",
+            PROJECT_ID,
+            "topics",
+            activeTopicId,
+            "chapters",
+            prevOpenId
+          ),
+          {
+            status: "closed",
+            closedAt: serverTimestamp(),
+          }
+        );
+      }
+
+      await updateDoc(doc(db, "projectSolo", PROJECT_ID, "topics", activeTopicId), {
+        openChapterId: newRef.id,
+      });
+
+      setTopics((prev) =>
+        prev.map((t) => (t.id === activeTopicId ? { ...t, openChapterId: newRef.id } : t))
+      );
+
+      setChapters((prev) => {
+        const bumped = prev.map((c) =>
+          prevOpenId && c.id === prevOpenId
+            ? { ...c, status: "closed" as const }
+            : c
+        );
+        return [
+          { id: newRef.id, title, status: "open", createdAt: null, closedAt: null },
+          ...bumped,
+        ];
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to create chapter";
+      setError(msg);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -223,7 +302,23 @@ export default function Home() {
           </header>
 
           <div className="p-6">
-            <div className="text-sm font-semibold text-neutral-200">Chapters</div>
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-neutral-200">Chapters</div>
+
+              <button
+                type="button"
+                onClick={createNewChapter}
+                disabled={!activeTopicId || busy}
+                className={[
+                  "rounded-xl px-3 py-2 text-sm font-semibold transition",
+                  !activeTopicId || busy
+                    ? "bg-neutral-800/40 text-neutral-500"
+                    : "bg-white text-black hover:bg-neutral-200",
+                ].join(" ")}
+              >
+                {busy ? "Creating…" : "New chapter"}
+              </button>
+            </div>
 
             <div className="mt-3 space-y-2">
               {chapters.length === 0 ? (
@@ -277,10 +372,6 @@ export default function Home() {
                   );
                 })
               )}
-            </div>
-
-            <div className="mt-6 rounded-xl bg-neutral-950/40 p-4 text-sm text-neutral-200">
-              Next: buttons for “New chapter” and “Close active chapter”.
             </div>
           </div>
         </section>
