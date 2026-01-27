@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { adminDb } from "../src/lib/firebase/admin.ts";
+import { adminDb } from "../src/lib/firebase/admin";
 import { Timestamp } from "firebase-admin/firestore";
 
 const PROJECT_ID = "default";
