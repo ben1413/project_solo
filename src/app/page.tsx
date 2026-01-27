@@ -284,8 +284,8 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-black text-white">
-      <div className="mx-auto flex min-h-screen max-w-6xl gap-6 px-6 py-10">
+    <main className="h-screen overflow-hidden bg-black text-white">
+      <div className="mx-auto flex h-screen max-w-6xl gap-6 px-6 py-10">
         {/* Topics lane */}
         <aside className="w-[280px] rounded-2xl bg-neutral-900/70 p-4 shadow">
           <div className="mb-3 text-sm font-semibold tracking-wide text-neutral-200">
@@ -442,7 +442,7 @@ export default function Home() {
           </div>
 
           {/* Work lane (always visible + always on) */}
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex min-w-0 min-h-0 flex-1 flex-col overflow-hidden">
             <header className="border-b border-neutral-800/60 bg-neutral-950/40 px-6 py-4">
               <div className="text-xs text-neutral-400">Run</div>
               <div className="mt-1 text-sm font-semibold text-neutral-100">
