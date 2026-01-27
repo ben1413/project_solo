@@ -12,13 +12,11 @@ type MessageComposerProps = {
 export function MessageComposer(props: MessageComposerProps) {
   const { topicId, chapterId, runId } = props;
   const [value, setValue] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  const enabled = Boolean(topicId && chapterId && runId);
+  const [submitting, setSubmitting] = useState(false);  const hasTarget = Boolean(topicId && chapterId && runId);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!enabled) return;
+    if (!hasTarget) return;
     const next = value.trim();
     if (!next) return;
 
@@ -37,7 +35,7 @@ export function MessageComposer(props: MessageComposerProps) {
     }
   }
 
-  const disabled = !enabled || submitting;
+  const disabled = submitting;
 
   return (
     <form
@@ -49,12 +47,12 @@ export function MessageComposer(props: MessageComposerProps) {
         onChange={(e) => setValue(e.target.value)}
         rows={2}
         disabled={disabled}
-        placeholder={enabled ? "Write a message…" : "Preparing run…"}
+        placeholder={hasTarget ? "Write a message…" : "Preparing run… (select a topic or wait for run)"}
         className="flex-1 resize-none rounded-md border border-neutral-800/60 bg-black/20 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 disabled:opacity-60"
       />
       <button
         type="submit"
-        disabled={disabled || !value.trim()}
+        disabled={disabled || !value.trim() || !hasTarget}
         className="rounded-md border border-neutral-800/60 bg-white/10 px-3 py-2 text-sm text-neutral-100 disabled:opacity-50"
       >
         Send
