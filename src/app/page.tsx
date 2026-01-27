@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ChapterTitle } from '@/components/chapters/ChapterTitle';
 import {
   addDoc,
   collection,
@@ -342,7 +343,7 @@ export default function Home() {
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="font-medium text-neutral-100">
-                          {c.title}
+                          <ChapterTitle topicId={activeTopicId as string} chapterId={c.id} title={c.title} disabled={!activeTopicId} />
                         </div>
 
                         <div className="flex items-center gap-2">
