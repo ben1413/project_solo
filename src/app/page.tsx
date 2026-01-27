@@ -385,10 +385,8 @@ export default function Home() {
 
           <div className="w-[260px] border-l border-neutral-800/60">
             <header className="border-b border-neutral-800/60 bg-black/40 px-6 py-4">
-              <div className="text-xs text-neutral-400">Topic</div>
-              <div className="mt-1 text-base font-semibold text-neutral-100">
-                {activeTopic ? activeTopic.title : "—"}
-              </div>
+              <div className="text-xs text-neutral-400">Chapters</div>
+              <div className="mt-1 text-base font-semibold text-neutral-100">{activeTopic ? activeTopic.title + " — Chapters" : "Chapters"}</div>
             </header>
 
             <div className="p-6">
