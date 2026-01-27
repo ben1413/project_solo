@@ -472,3 +472,9 @@ export default function Home() {
     </main>
   );
 }
+
+/* TEMP: perl patch failed due to escaping; apply manually using VS Code.
+   Insert the following block right after:
+     const [busy, setBusy] = useState(false);
+   and replace the chat header chapter-id interpolation with {selectedChapterDisplay}.
+*/
