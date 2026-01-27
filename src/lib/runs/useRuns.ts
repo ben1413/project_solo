@@ -43,11 +43,7 @@ export function useRuns(params: { topicId?: string; chapterId?: string }) {
   }, [enabled, topicId, chapterId]);
 
   useEffect(() => {
-    if (!runsRef) {
-      setRuns(null);
-      setError(null);
-      return;
-    }
+    if (!runsRef) return;
 
     const q = query(runsRef, orderBy("createdAt", "desc"));
 
@@ -65,6 +61,10 @@ export function useRuns(params: { topicId?: string; chapterId?: string }) {
 
     return () => unsub();
   }, [runsRef]);
+
+  if (!enabled) {
+    return { runs: null, error: null, enabled };
+  }
 
   return { runs, error, enabled };
 }

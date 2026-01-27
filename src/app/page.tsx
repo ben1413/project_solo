@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChapterTitle } from '@/components/chapters/ChapterTitle';
 import {
+  Timestamp,
   addDoc,
   collection,
   doc,
@@ -14,6 +14,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
+import { ChapterTitle } from "@/components/chapters/ChapterTitle";
 
 type TopicDoc = {
   title?: unknown;
@@ -65,6 +66,17 @@ function toStatus(v: unknown): "open" | "closed" {
   return v === "closed" ? "closed" : "open";
 }
 
+function formatCreatedAt(v: unknown): string | null {
+  if (v instanceof Timestamp) {
+    try {
+      return v.toDate().toLocaleString();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export default function Home() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
@@ -106,7 +118,9 @@ export default function Home() {
 
         if (!cancelled) {
           setTopics(visible);
-          setActiveTopicId((prev) => (prev ? prev : visible.length ? visible[0].id : null));
+          setActiveTopicId((prev) =>
+            prev ? prev : visible.length ? visible[0].id : null
+          );
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Failed to load topics";
@@ -151,7 +165,7 @@ export default function Home() {
             title: toStr(data.title, d.id),
             status: toStatus(data.status),
             createdAt: data.createdAt,
-            closedAt: data.closedAt ?? null,
+            closedAt: data.closedAt instanceof Timestamp ? data.closedAt : null,
           };
         });
 
@@ -176,8 +190,8 @@ export default function Home() {
     setError(null);
 
     try {
-      const nowLabel = new Date().toLocaleString();
-      const title = `${activeTopic.title} — ${nowLabel}`;
+      // Title is human label only. Timestamp is displayed separately.
+      const title = `${activeTopic.title}`;
 
       const chaptersCol = collection(
         db,
@@ -221,14 +235,14 @@ export default function Home() {
       });
 
       setTopics((prev) =>
-        prev.map((t) => (t.id === activeTopicId ? { ...t, openChapterId: newRef.id } : t))
+        prev.map((t) =>
+          t.id === activeTopicId ? { ...t, openChapterId: newRef.id } : t
+        )
       );
 
       setChapters((prev) => {
         const bumped = prev.map((c) =>
-          prevOpenId && c.id === prevOpenId
-            ? { ...c, status: "closed" as const }
-            : c
+          prevOpenId && c.id === prevOpenId ? { ...c, status: "closed" as const } : c
         );
         return [
           { id: newRef.id, title, status: "open", createdAt: null, closedAt: null },
@@ -261,8 +275,7 @@ export default function Home() {
           <div className="space-y-1">
             {topics.map((t) => {
               const active = t.id === activeTopicId;
-              const isCore =
-                t.id === "runway" || t.id === "partner" || t.id === "kids";
+              const isCore = t.id === "runway" || t.id === "partner" || t.id === "kids";
               return (
                 <button
                   key={t.id}
@@ -331,6 +344,13 @@ export default function Home() {
                   const isOpen = c.status === "open";
                   const isActive = activeTopic?.openChapterId === c.id;
 
+                  // Back-compat: older titles included a timestamp suffix like "Topic — 1/26/..."
+                  const parts = c.title.split(" — ");
+                  const baseTitle = parts[0] || c.title;
+                  const legacyStamp = parts.length > 1 ? parts.slice(1).join(" — ") : null;
+
+                  const createdLabel = formatCreatedAt(c.createdAt) || legacyStamp;
+
                   return (
                     <div
                       key={c.id}
@@ -343,7 +363,19 @@ export default function Home() {
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="font-medium text-neutral-100">
-                          <ChapterTitle topicId={activeTopicId as string} chapterId={c.id} title={c.title} disabled={!activeTopicId} />
+                          <ChapterTitle
+                            topicId={activeTopicId as string}
+                            chapterId={c.id}
+                            title={baseTitle}
+                            disabled={!activeTopicId}
+                            onRenamed={(nextTitle) => {
+                              setChapters((prev) =>
+                                prev.map((x) =>
+                                  x.id === c.id ? { ...x, title: nextTitle } : x
+                                )
+                              );
+                            }}
+                          />
                         </div>
 
                         <div className="flex items-center gap-2">
@@ -366,9 +398,11 @@ export default function Home() {
                         </div>
                       </div>
 
-                      <div className="mt-2 text-xs text-neutral-400">
-                        id: {c.id}
-                      </div>
+                      {createdLabel ? (
+                        <div className="mt-1 text-xs text-neutral-400">{createdLabel}</div>
+                      ) : null}
+
+                      <div className="mt-2 text-xs text-neutral-400">id: {c.id}</div>
                     </div>
                   );
                 })

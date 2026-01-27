@@ -51,11 +51,7 @@ export function useMessages(params: {
   }, [enabled, topicId, chapterId, runId]);
 
   useEffect(() => {
-    if (!messagesRef) {
-      setMessages(null);
-      setError(null);
-      return;
-    }
+    if (!messagesRef) return;
 
     const q = query(messagesRef, orderBy("createdAt", "asc"));
 
@@ -73,6 +69,10 @@ export function useMessages(params: {
 
     return () => unsub();
   }, [messagesRef]);
+
+  if (!enabled) {
+    return { messages: null, error: null, enabled };
+  }
 
   return { messages, error, enabled };
 }
