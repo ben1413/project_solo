@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createRun } from "@/lib/runs/createRun";
 import { useRuns } from "@/lib/runs/useRuns";
 
@@ -15,10 +15,20 @@ export function ActiveRun(props: ActiveRunProps) {
   const { topicId, chapterId, activeRunId, onRunStarted } = props;
   const { runs, enabled } = useRuns({ topicId, chapterId });
 
+  const creatingRef = useRef(false);
+
   useEffect(() => {
     if (!enabled) return;
     if (activeRunId) return;
-    if (!runs || runs.length > 0) return;
+
+    // Wait for initial snapshot load
+    if (runs === null) return;
+
+    // If any run exists, page will adopt newest via derivedRunId
+    if (runs.length > 0) return;
+
+    if (creatingRef.current) return;
+    creatingRef.current = true;
 
     (async () => {
       const runId = await createRun({
@@ -28,8 +38,6 @@ export function ActiveRun(props: ActiveRunProps) {
       onRunStarted?.(runId);
     })();
   }, [enabled, runs, activeRunId, topicId, chapterId, onRunStarted]);
-
-  if (!enabled) return null;
 
   return null;
 }

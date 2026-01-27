@@ -14,6 +14,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
+import { ensureInbox, INBOX } from "@/lib/system/ensureInbox";
 import { ChapterTitle } from "@/components/chapters/ChapterTitle";
 import { ActiveRun } from "@/components/runs/ActiveRun";
 import { MessageList } from "@/components/messages/MessageList";
@@ -88,6 +89,11 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Always ensure Inbox exists (always-on work context)
+  useEffect(() => {
+    ensureInbox(db).catch(() => {});
+  }, []);
+
   const activeTopic = useMemo(
     () => topics.find((t) => t.id === activeTopicId) || null,
     [topics, activeTopicId]
@@ -95,13 +101,27 @@ export default function Home() {
 
   const activeChapterId = activeTopic?.openChapterId ?? null;
 
+  // Work lane is always on: if no selection, route to Inbox.
+  const workTopicId = activeTopicId ?? INBOX.topicId;
+  const workChapterId = activeChapterId ?? INBOX.chapterId;
+
   const { runs } = useRuns({
-    topicId: activeTopicId ?? undefined,
-    chapterId: activeChapterId ?? undefined,
+    topicId: workTopicId ?? undefined,
+    chapterId: workChapterId ?? undefined,
   });
 
-  // Canonical invariant for v0: one run per open chapter. Use newest run.
-  const activeRunId = runs && runs.length > 0 ? runs[0].id : null;
+  const derivedRunId = runs && runs.length > 0 ? runs[0].id : null;
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+
+  // Reset run selection when changing work context.
+  useEffect(() => {
+    setActiveRunId(null);
+  }, [workTopicId, workChapterId]);
+
+  // Adopt derived run when it appears.
+  useEffect(() => {
+    if (derivedRunId) setActiveRunId((prev) => prev ?? derivedRunId);
+  }, [derivedRunId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,14 +178,7 @@ export default function Home() {
 
       try {
         const q = query(
-          collection(
-            db,
-            "projectSolo",
-            PROJECT_ID,
-            "topics",
-            activeTopicId,
-            "chapters"
-          ),
+          collection(db, "projectSolo", PROJECT_ID, "topics", activeTopicId, "chapters"),
           orderBy("createdAt", "desc"),
           limit(50)
         );
@@ -204,7 +217,6 @@ export default function Home() {
     setError(null);
 
     try {
-      // Title is human label only. Timestamp is displayed separately.
       const title = `${activeTopic.title}`;
 
       const chaptersCol = collection(
@@ -360,7 +372,6 @@ export default function Home() {
                     const isOpen = c.status === "open";
                     const isActive = activeTopic?.openChapterId === c.id;
 
-                    // Back-compat: older titles included a timestamp suffix like "Topic — 1/26/..."
                     const parts = c.title.split(" — ");
                     const baseTitle = parts[0] || c.title;
                     const legacyStamp =
@@ -430,42 +441,38 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Work lane (always visible) */}
+          {/* Work lane (always visible + always on) */}
           <div className="flex min-w-0 flex-1 flex-col">
             <header className="border-b border-neutral-800/60 bg-neutral-950/40 px-6 py-4">
               <div className="text-xs text-neutral-400">Run</div>
               <div className="mt-1 text-sm font-semibold text-neutral-100">
-                {activeTopic ? activeTopic.title : "—"}
-                {activeChapterId ? " / " + activeChapterId : ""}
+                {activeTopic ? activeTopic.title : "Inbox"}
+              </div>
+              <div className="mt-2 text-[11px] text-neutral-500">
+                topic={workTopicId} chapter={workChapterId} run={(activeRunId ?? derivedRunId) ?? "—"}
               </div>
             </header>
 
-            {!activeTopicId || !activeChapterId ? (
-              <div className="flex-1 p-6 text-sm text-neutral-300">
-                Select a topic to load its open chapter.
-              </div>
-            ) : (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <ActiveRun
-                  topicId={activeTopicId}
-                  chapterId={activeChapterId}
-                  activeRunId={activeRunId}
-                  onRunStarted={() => {}}
-                />
-                <div className="min-h-0 flex-1 overflow-auto">
-                  <MessageList
-                    topicId={activeTopicId}
-                    chapterId={activeChapterId}
-                    runId={activeRunId ?? undefined}
-                  />
-                </div>
-                <MessageComposer
-                  topicId={activeTopicId}
-                  chapterId={activeChapterId}
-                  runId={activeRunId ?? undefined}
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ActiveRun
+                topicId={workTopicId}
+                chapterId={workChapterId}
+                activeRunId={activeRunId ?? derivedRunId}
+                onRunStarted={setActiveRunId}
+              />
+              <div className="min-h-0 flex-1 overflow-auto">
+                <MessageList
+                  topicId={workTopicId}
+                  chapterId={workChapterId}
+                  runId={(activeRunId ?? derivedRunId) ?? undefined}
                 />
               </div>
-            )}
+              <MessageComposer
+                topicId={workTopicId}
+                chapterId={workChapterId}
+                runId={(activeRunId ?? derivedRunId) ?? undefined}
+              />
+            </div>
           </div>
         </section>
       </div>

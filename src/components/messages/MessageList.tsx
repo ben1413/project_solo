@@ -13,15 +13,11 @@ export function MessageList(props: MessageListProps) {
   const { messages, enabled } = useMessages({ topicId, chapterId, runId });
 
   if (!enabled) {
-    return null;
+    return <div className="p-4 text-sm text-neutral-500">Preparing run…</div>;
   }
 
   if (!messages || messages.length === 0) {
-    return (
-      <div className="text-sm text-muted-foreground p-4">
-        No messages yet.
-      </div>
-    );
+    return <div className="p-4 text-sm text-neutral-500">No messages yet.</div>;
   }
 
   return (
@@ -29,7 +25,7 @@ export function MessageList(props: MessageListProps) {
       {messages.map((m) => (
         <div
           key={m.id}
-          className="rounded-md border px-3 py-2 text-sm whitespace-pre-wrap"
+          className="rounded-md border border-neutral-800/60 bg-neutral-950/30 px-3 py-2 text-sm whitespace-pre-wrap text-neutral-100"
         >
           {m.content}
         </div>
