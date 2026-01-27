@@ -86,6 +86,7 @@ export default function Home() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -99,11 +100,9 @@ export default function Home() {
     [topics, activeTopicId]
   );
 
-  const activeChapterId = activeTopic?.openChapterId ?? null;
-
-  // Work lane is always on: if no selection, route to Inbox.
+  // Work lane is always on. If no topic/chapter selected, route to Inbox.
   const workTopicId = activeTopicId ?? INBOX.topicId;
-  const workChapterId = activeChapterId ?? INBOX.chapterId;
+  const workChapterId = selectedChapterId ?? INBOX.chapterId;
 
   const { runs } = useRuns({
     topicId: workTopicId ?? undefined,
@@ -135,26 +134,24 @@ export default function Home() {
         );
         const snap = await getDocs(q);
 
-        const rows: Topic[] = snap.docs.map((d) => {
-          const data = d.data() as TopicDoc;
-          return {
-            id: d.id,
-            title: toStr(data.title, d.id),
-            order: toNum(data.order, 999),
-            archived: toBool(data.archived, false),
-            isSystem: toBool(data.isSystem, false),
-            openChapterId:
-              typeof data.openChapterId === "string" ? data.openChapterId : null,
-          };
-        });
-
-        const visible = rows.filter((t) => !t.archived);
+        const rows: Topic[] = snap.docs
+          .map((d) => {
+            const data = d.data() as TopicDoc;
+            return {
+              id: d.id,
+              title: toStr(data.title, d.id),
+              order: toNum(data.order, 999),
+              archived: toBool(data.archived, false),
+              isSystem: toBool(data.isSystem, false),
+              openChapterId:
+                typeof data.openChapterId === "string" ? data.openChapterId : null,
+            };
+          })
+          .filter((t) => !t.archived);
 
         if (!cancelled) {
-          setTopics(visible);
-          setActiveTopicId((prev) =>
-            prev ? prev : visible.length ? visible[0].id : null
-          );
+          setTopics(rows);
+          setActiveTopicId((prev) => (prev ? prev : rows.length ? rows[0].id : null));
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Failed to load topics";
@@ -167,6 +164,11 @@ export default function Home() {
       cancelled = true;
     };
   }, []);
+
+  // When topic changes, clear selected chapter so we can choose a sane default after load.
+  useEffect(() => {
+    setSelectedChapterId(null);
+  }, [activeTopicId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -196,7 +198,17 @@ export default function Home() {
           };
         });
 
-        if (!cancelled) setChapters(rows);
+        if (cancelled) return;
+
+        setChapters(rows);
+
+        // Default selection rule:
+        // 1) topic.openChapterId if present
+        // 2) newest chapter (rows[0])
+        // 3) null (will fall back to Inbox)
+        const prefer = activeTopic?.openChapterId ?? null;
+        const newest = rows.length ? rows[0].id : null;
+        setSelectedChapterId((prev) => prev ?? prefer ?? newest ?? null);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Failed to load chapters";
         if (!cancelled) setError(msg);
@@ -207,7 +219,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [activeTopicId]);
+  }, [activeTopicId, activeTopic?.openChapterId]);
 
   async function createNewChapter() {
     if (!activeTopicId || !activeTopic) return;
@@ -238,6 +250,7 @@ export default function Home() {
 
       const prevOpenId = activeTopic.openChapterId;
 
+      // We keep "openChapterId" as a convenience pointer, but we DO NOT enforce read-only.
       if (prevOpenId) {
         await updateDoc(
           doc(
@@ -275,6 +288,9 @@ export default function Home() {
           ...bumped,
         ];
       });
+
+      // Select the new chapter immediately (always usable).
+      setSelectedChapterId(newRef.id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to create chapter";
       setError(msg);
@@ -284,8 +300,8 @@ export default function Home() {
   }
 
   return (
-    <main className="h-screen overflow-hidden bg-black text-white">
-      <div className="mx-auto flex h-screen max-w-6xl gap-6 px-6 py-10">
+    <main className="min-h-screen bg-black text-white">
+      <div className="flex h-screen w-screen gap-4 p-4">
         {/* Topics lane */}
         <aside className="w-[260px] rounded-2xl border border-neutral-800/60 bg-neutral-950/40 p-4">
           <div className="mb-3 text-sm font-semibold tracking-wide text-neutral-200">
@@ -332,12 +348,43 @@ export default function Home() {
           </div>
         </aside>
 
-        {/* Middle + Right lanes */}
-        <section className="flex flex-1 overflow-hidden rounded-2xl border border-neutral-800/60 bg-neutral-950/30">
-          {/* Chapters lane */}
-          <div className="w-[380px] border-r border-neutral-800/60">
+        {/* Chat */}
+        <section className="flex min-w-0 flex-1 overflow-hidden rounded-2xl border border-neutral-800/60 bg-neutral-950/30">
+          <div className="flex min-w-0 flex-1 flex-col">
             <header className="border-b border-neutral-800/60 bg-black/40 px-6 py-4">
-              <div className="text-xs text-neutral-400">ProjectSolo</div>
+              <div className="text-xs text-neutral-400">Chat</div>
+              <div className="mt-1 text-sm font-semibold text-neutral-100">
+                {(activeTopic ? activeTopic.title : "Inbox")}
+                {" / "}
+                {(selectedChapterId ?? INBOX.chapterId)}
+              </div>
+            </header>
+
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ActiveRun
+                topicId={workTopicId}
+                chapterId={workChapterId}
+                activeRunId={activeRunId}
+                onRunStarted={setActiveRunId}
+              />
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <MessageList
+                  topicId={workTopicId}
+                  chapterId={workChapterId}
+                  runId={(activeRunId ?? derivedRunId) ?? undefined}
+                />
+              </div>
+              <MessageComposer
+                topicId={workTopicId}
+                chapterId={workChapterId}
+                runId={(activeRunId ?? derivedRunId) ?? undefined}
+              />
+            </div>
+          </div>
+
+          <div className="w-[360px] border-l border-neutral-800/60">
+            <header className="border-b border-neutral-800/60 bg-black/40 px-6 py-4">
+              <div className="text-xs text-neutral-400">Topic</div>
               <div className="mt-1 text-base font-semibold text-neutral-100">
                 {activeTopic ? activeTopic.title : "—"}
               </div>
@@ -370,7 +417,7 @@ export default function Home() {
                 ) : (
                   chapters.map((c) => {
                     const isOpen = c.status === "open";
-                    const isActive = activeTopic?.openChapterId === c.id;
+                    const isSelected = selectedChapterId === c.id;
 
                     const parts = c.title.split(" — ");
                     const baseTitle = parts[0] || c.title;
@@ -382,11 +429,15 @@ export default function Home() {
                     return (
                       <div
                         key={c.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedChapterId(c.id)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedChapterId(c.id); } }}
                         className={[
-                          "rounded-xl border p-4 text-sm",
-                          isActive
+                          "w-full rounded-xl border p-4 text-left text-sm transition",
+                          isSelected
                             ? "border-white/40 bg-white/10"
-                            : "border-neutral-800/60 bg-neutral-950/30",
+                            : "border-neutral-800/60 bg-neutral-950/30 hover:bg-neutral-900/40",
                         ].join(" ")}
                       >
                         <div className="flex items-center justify-between gap-3">
@@ -407,7 +458,7 @@ export default function Home() {
                           </div>
 
                           <div className="flex items-center gap-2">
-                            {isActive ? (
+                            {isSelected ? (
                               <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-black">
                                 active
                               </span>
@@ -438,40 +489,6 @@ export default function Home() {
                   })
                 )}
               </div>
-            </div>
-          </div>
-
-          {/* Work lane (always visible + always on) */}
-          <div className="flex min-w-0 min-h-0 flex-1 flex-col overflow-hidden">
-            <header className="border-b border-neutral-800/60 bg-black/40 px-6 py-4">
-              <div className="text-xs text-neutral-400">Run</div>
-              <div className="mt-1 text-sm font-semibold text-neutral-100">
-                {activeTopic ? activeTopic.title : "Inbox"}
-              </div>
-              <div className="mt-2 text-[11px] text-neutral-500">
-                topic={workTopicId} chapter={workChapterId} run={(activeRunId ?? derivedRunId) ?? "—"}
-              </div>
-            </header>
-
-            <div className="flex min-h-0 flex-1 flex-col">
-              <ActiveRun
-                topicId={workTopicId}
-                chapterId={workChapterId}
-                activeRunId={activeRunId ?? derivedRunId}
-                onRunStarted={setActiveRunId}
-              />
-              <div className="min-h-0 flex-1 overflow-auto">
-                <MessageList
-                  topicId={workTopicId}
-                  chapterId={workChapterId}
-                  runId={(activeRunId ?? derivedRunId) ?? undefined}
-                />
-              </div>
-              <MessageComposer
-                topicId={workTopicId}
-                chapterId={workChapterId}
-                runId={(activeRunId ?? derivedRunId) ?? undefined}
-              />
             </div>
           </div>
         </section>
