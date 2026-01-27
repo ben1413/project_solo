@@ -429,10 +429,10 @@ export default function Home() {
                         onClick={() => setSelectedChapterId(c.id)}
                         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedChapterId(c.id); } }}
                         className={[
-                          "w-full rounded-xl border p-4 text-left text-sm transition",
+                          "w-full rounded-xl px-3 py-2 text-left text-sm transition",
                           isSelected
-                            ? "border-white/40 bg-white/10"
-                            : "border-neutral-800/60 bg-neutral-950/30 hover:bg-neutral-900/40",
+                            ? "bg-white text-black"
+                            : "bg-neutral-800/40 text-neutral-200 hover:bg-neutral-800/70",
                         ].join(" ")}
                       >
                         <div className="flex items-center justify-between gap-3">
