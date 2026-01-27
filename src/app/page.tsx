@@ -16,6 +16,7 @@ import {
 import { db } from "@/lib/firebase/client";
 import { ensureInbox, INBOX } from "@/lib/system/ensureInbox";
 import { ChapterTitle } from "@/components/chapters/ChapterTitle";
+import { chapterDisplayTitle } from "@/lib/chapters/chapterTitle";
 import { ActiveRun } from "@/components/runs/ActiveRun";
 import { MessageList } from "@/components/messages/MessageList";
 import { MessageComposer } from "@/components/messages/MessageComposer";
@@ -415,16 +416,10 @@ export default function Home() {
                     No chapters yet for this topic.
                   </div>
                 ) : (
-                  chapters.map((c) => {
-                    const isOpen = c.status === "open";
-                    const isSelected = selectedChapterId === c.id;
+                  chapters.map((c, idx) => {                    const isSelected = selectedChapterId === c.id;
 
-                    const parts = c.title.split(" — ");
-                    const baseTitle = parts[0] || c.title;
-                    const legacyStamp =
-                      parts.length > 1 ? parts.slice(1).join(" — ") : null;
-
-                    const createdLabel = formatCreatedAt(c.createdAt) || legacyStamp;
+                    const displayTitle = chapterDisplayTitle(c.title, idx);
+                    const createdLabel = formatCreatedAt(c.createdAt);
 
                     return (
                       <div
@@ -445,7 +440,7 @@ export default function Home() {
                             <ChapterTitle
                               topicId={activeTopicId as string}
                               chapterId={c.id}
-                              title={baseTitle}
+                              title={displayTitle}
                               disabled={!activeTopicId}
                               onRenamed={(nextTitle) => {
                                 setChapters((prev) =>
@@ -457,24 +452,7 @@ export default function Home() {
                             />
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            {isSelected ? (
-                              <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-black">
-                                active
-                              </span>
-                            ) : null}
-
-                            <span
-                              className={[
-                                "rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                                isOpen
-                                  ? "bg-emerald-500/20 text-emerald-200"
-                                  : "bg-neutral-700/50 text-neutral-200",
-                              ].join(" ")}
-                            >
-                              {c.status}
-                            </span>
-                          </div>
+                          <div className="flex items-center gap-2">                          </div>
                         </div>
 
                         {createdLabel ? (
@@ -483,7 +461,7 @@ export default function Home() {
                           </div>
                         ) : null}
 
-                        <div className="mt-2 text-xs text-neutral-400">id: {c.id}</div>
+                        
                       </div>
                     );
                   })
