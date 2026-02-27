@@ -10,6 +10,16 @@ import {
   type QuerySnapshot,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
+import type {
+  PersonaEnum,
+  ActivityTypeEnum,
+  RiskLevel,
+  ApprovalState,
+  CheckResult,
+  EvidenceLink,
+  Traceability,
+  Outcome,
+} from "@/lib/personas/types";
 
 export type Run = {
   id: string;
@@ -18,6 +28,29 @@ export type Run = {
   title: string | null;
   createdAt: unknown;
   closedAt: unknown | null;
+
+  // ─── Persona Context (may be null on legacy runs) ───
+  status?: "active" | "blocked" | "closed";
+  primaryPersona?: PersonaEnum | null;
+  supportingPersonas?: PersonaEnum[];
+  activityType?: ActivityTypeEnum | null;
+
+  // ─── Risk & Governance ───
+  riskLevel?: RiskLevel;
+  approvalRequired?: boolean;
+  approvalState?: ApprovalState;
+  policyProfile?: string | null;
+
+  // ─── Checks ───
+  requiredChecks?: string[];
+  checkResults?: Record<string, CheckResult>;
+
+  // ─── Evidence & Traceability ───
+  evidenceLinks?: EvidenceLink[];
+  traceability?: Traceability;
+
+  // ─── Outcome ───
+  outcome?: Outcome;
 };
 
 export function useRuns(params: { topicId?: string; chapterId?: string }) {

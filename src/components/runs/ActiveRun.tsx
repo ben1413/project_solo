@@ -3,16 +3,31 @@
 import { useEffect, useRef } from "react";
 import { createRun } from "@/lib/runs/createRun";
 import { useRuns } from "@/lib/runs/useRuns";
+import type { PersonaEnum, ActivityTypeEnum, RiskLevel } from "@/lib/personas/types";
 
 type ActiveRunProps = {
   topicId?: string;
   chapterId?: string;
   activeRunId?: string | null;
   onRunStarted?: (runId: string) => void;
+  // ─── Persona Context ───
+  primaryPersona?: PersonaEnum | null;
+  supportingPersonas?: PersonaEnum[];
+  activityType?: ActivityTypeEnum | null;
+  riskLevel?: RiskLevel;
 };
 
 export function ActiveRun(props: ActiveRunProps) {
-  const { topicId, chapterId, activeRunId, onRunStarted } = props;
+  const {
+    topicId,
+    chapterId,
+    activeRunId,
+    onRunStarted,
+    primaryPersona,
+    supportingPersonas,
+    activityType,
+    riskLevel,
+  } = props;
   const { runs, enabled } = useRuns({ topicId, chapterId });
 
   const creatingRef = useRef(false);
@@ -34,10 +49,15 @@ export function ActiveRun(props: ActiveRunProps) {
       const runId = await createRun({
         topicId: topicId as string,
         chapterId: chapterId as string,
+        // ─── Pass persona context into new runs ───
+        primaryPersona: primaryPersona ?? undefined,
+        supportingPersonas: supportingPersonas ?? undefined,
+        activityType: activityType ?? undefined,
+        riskLevel: riskLevel ?? undefined,
       });
       onRunStarted?.(runId);
     })();
-  }, [enabled, runs, activeRunId, topicId, chapterId, onRunStarted]);
+  }, [enabled, runs, activeRunId, topicId, chapterId, onRunStarted, primaryPersona, supportingPersonas, activityType, riskLevel]);
 
   return null;
 }

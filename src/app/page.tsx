@@ -21,6 +21,8 @@ import { ActiveRun } from "@/components/runs/ActiveRun";
 import { MessageList } from "@/components/messages/MessageList";
 import { MessageComposer } from "@/components/messages/MessageComposer";
 import { useRuns } from "@/lib/runs/useRuns";
+import { usePersonaContext } from "@/lib/personas/usePersonaContext";
+import { PersonaBar } from "@/components/personas/PersonaBar";
 
 type TopicDoc = {
   title?: unknown;
@@ -90,6 +92,9 @@ export default function Home() {
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // ─── Persona Context ───
+  const personaCtx = usePersonaContext();
 
   // Always ensure Inbox exists (always-on work context)
   useEffect(() => {
@@ -203,10 +208,6 @@ export default function Home() {
 
         setChapters(rows);
 
-        // Default selection rule:
-        // 1) topic.openChapterId if present
-        // 2) newest chapter (rows[0])
-        // 3) null (will fall back to Inbox)
         const prefer = activeTopic?.openChapterId ?? null;
         const newest = rows.length ? rows[0].id : null;
         setSelectedChapterId((prev) => prev ?? prefer ?? newest ?? null);
@@ -251,7 +252,6 @@ export default function Home() {
 
       const prevOpenId = activeTopic.openChapterId;
 
-      // We keep "openChapterId" as a convenience pointer, but we DO NOT enforce read-only.
       if (prevOpenId) {
         await updateDoc(
           doc(
@@ -290,7 +290,6 @@ export default function Home() {
         ];
       });
 
-      // Select the new chapter immediately (always usable).
       setSelectedChapterId(newRef.id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to create chapter";
@@ -367,6 +366,10 @@ export default function Home() {
                 chapterId={workChapterId}
                 activeRunId={activeRunId}
                 onRunStarted={setActiveRunId}
+                primaryPersona={personaCtx.primaryPersona}
+                supportingPersonas={personaCtx.supportingPersonas}
+                activityType={personaCtx.activityType}
+                riskLevel={personaCtx.riskLevel}
               />
               <div className="min-h-0 flex-1 overflow-hidden">
                 <MessageList
@@ -379,7 +382,13 @@ export default function Home() {
                 topicId={workTopicId}
                 chapterId={workChapterId}
                 runId={(activeRunId ?? derivedRunId) ?? undefined}
+                primaryPersona={personaCtx.primaryPersona}
+                supportingPersonas={personaCtx.supportingPersonas}
+                activityType={personaCtx.activityType}
+                riskLevel={personaCtx.riskLevel}
               />
+              {/* ─── Persona Bar ─── */}
+              <PersonaBar ctx={personaCtx} />
             </div>
           </div>
 
@@ -472,9 +481,3 @@ export default function Home() {
     </main>
   );
 }
-
-/* TEMP: perl patch failed due to escaping; apply manually using VS Code.
-   Insert the following block right after:
-     const [busy, setBusy] = useState(false);
-   and replace the chat header chapter-id interpolation with {selectedChapterDisplay}.
-*/

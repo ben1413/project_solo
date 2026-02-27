@@ -3,15 +3,29 @@
 import { useState } from "react";
 import { appendMessage } from "@/lib/messages/appendMessage";
 import { createRun } from "@/lib/runs/createRun";
+import type { PersonaEnum, ActivityTypeEnum, RiskLevel } from "@/lib/personas/types";
 
 type MessageComposerProps = {
   topicId?: string;
   chapterId?: string;
   runId?: string;
+  // ─── Persona Context ───
+  primaryPersona?: PersonaEnum | null;
+  supportingPersonas?: PersonaEnum[];
+  activityType?: ActivityTypeEnum | null;
+  riskLevel?: RiskLevel;
 };
 
 export function MessageComposer(props: MessageComposerProps) {
-  const { topicId, chapterId, runId } = props;
+  const {
+    topicId,
+    chapterId,
+    runId,
+    primaryPersona,
+    supportingPersonas,
+    activityType,
+    riskLevel,
+  } = props;
 
   const [value, setValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -34,6 +48,11 @@ export function MessageComposer(props: MessageComposerProps) {
         targetRunId = await createRun({
           topicId: topicId as string,
           chapterId: chapterId as string,
+          // ─── Pass persona context into on-demand runs ───
+          primaryPersona: primaryPersona ?? undefined,
+          supportingPersonas: supportingPersonas ?? undefined,
+          activityType: activityType ?? undefined,
+          riskLevel: riskLevel ?? undefined,
         });
       }
 
