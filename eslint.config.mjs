@@ -12,7 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-  ]),
+    "functions/lib/**",
+  "scripts/**",
+  "functions/**",
+  "p0/**",
+  "functions_DISABLED/**",
+]),
 ]);
 
 export default eslintConfig;

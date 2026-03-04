@@ -1,26 +1,32 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useState, useEffect, useMemo } from 'react';
+import { Sidebar } from '@/components/layout/Sidebar';
+import { MessageList } from '@/components/messages/MessageList';
+import { MessageComposer } from '@/components/messages/MessageComposer';
+import { ChapterList } from '@/components/layout/ChapterList';
+import { AgentDirective } from '@/components/agents/AgentDirective';
+import { ProjectSoloLogo } from '@/components/ProjectSoloLogo';
+import { PMConsole } from '@/components/pm/PMConsole';
+import { PERSONAS, Persona, LLMEngine, LLM_ENGINES } from '@/data/personas';
+import { parseMessageIntent } from '@/lib/engine/intentParser';
+import { db } from '@/lib/firebase/client';
 import {
-  Timestamp,
-  addDoc,
   collection,
   doc,
-  getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   updateDoc,
-} from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
-import { ensureInbox, INBOX } from "@/lib/system/ensureInbox";
-import { ChapterTitle } from "@/components/chapters/ChapterTitle";
-import { chapterDisplayTitle } from "@/lib/chapters/chapterTitle";
-import { ActiveRun } from "@/components/runs/ActiveRun";
-import { MessageList } from "@/components/messages/MessageList";
-import { MessageComposer } from "@/components/messages/MessageComposer";
-import { useRuns } from "@/lib/runs/useRuns";
+} from 'firebase/firestore';
+import { createNewChapter } from '@/lib/chapters/newChapter';
+import { renameChapter } from '@/lib/chapters/renameChapter';
+import { deleteChapter } from '@/lib/chapters/deleteChapter';
+import { ensureInbox, INBOX } from '@/lib/system/ensureInbox';
+import { ensureRun } from '@/lib/runs/ensureRun';
+import { useRuns } from '@/lib/runs/useRuns';
 
 type TopicDoc = {
   title?: unknown;
@@ -72,28 +78,49 @@ function toStatus(v: unknown): "open" | "closed" {
   return v === "closed" ? "closed" : "open";
 }
 
-function formatCreatedAt(v: unknown): string | null {
-  if (v instanceof Timestamp) {
-    try {
-      return v.toDate().toLocaleString();
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-export default function Home() {
+export default function ProjectSoloPage() {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // ORCHESTRATION STATE
+  const [activePersona, setActivePersona] = useState<Persona>(PERSONAS[0]);
+  const [activeEngine, setActiveEngine] = useState<LLMEngine>('gpt-5.2');
+  const [isSwitching, setIsSwitching] = useState(false);
+  const [pmOpen, setPmOpen] = useState(false);
+  const [pmChatOpen, setPmChatOpen] = useState(false);
+  const [pmActivated, setPmActivated] = useState(false);
+  const [pmAuthorityProfile, setPmAuthorityProfile] = useState<Record<string, "human" | "hitl" | "agent">>({});
 
-  // Always ensure Inbox exists (always-on work context)
+  // Intent Listener: Watches the state and flashes the UI during a switch
+  const handleIntentDetection = (text: string) => {
+    const { persona, engine } = parseMessageIntent(text);
+    if (persona && persona.id !== activePersona.id) {
+      setActivePersona(persona);
+      triggerFlash();
+    }
+    if (engine && engine !== activeEngine) {
+      setActiveEngine(engine);
+      triggerFlash();
+    }
+  };
+
+  const triggerFlash = () => {
+    setIsSwitching(true);
+    setTimeout(() => setIsSwitching(false), 1000);
+  };
+
   useEffect(() => {
     ensureInbox(db).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const stored = typeof window !== "undefined" ? window.localStorage.getItem("pmConsoleActivated") : null;
+    if (stored === "true") setPmActivated(true);
   }, []);
 
   const activeTopic = useMemo(
@@ -101,7 +128,20 @@ export default function Home() {
     [topics, activeTopicId]
   );
 
-  // Work lane is always on. If no topic/chapter selected, route to Inbox.
+  const openChapters = useMemo(
+    () => chapters.filter((c) => c.status === "open"),
+    [chapters]
+  );
+
+  const selectedChapter = useMemo(
+    () => chapters.find((c) => c.id === (selectedChapterId ?? undefined)) ?? null,
+    [chapters, selectedChapterId]
+  );
+
+  const topicTitle = activeTopic?.title ?? "Inbox";
+  const chapterTitle = selectedChapter?.title ?? (activeTopicId == null ? "Inbox" : "Chapter");
+  const breadcrumb = `${topicTitle} / ${chapterTitle}`;
+
   const workTopicId = activeTopicId ?? INBOX.topicId;
   const workChapterId = selectedChapterId ?? INBOX.chapterId;
 
@@ -110,31 +150,22 @@ export default function Home() {
     chapterId: workChapterId ?? undefined,
   });
 
-  const derivedRunId = runs && runs.length > 0 ? runs[0].id : null;
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
-
-  // Reset run selection when changing work context.
   useEffect(() => {
     setActiveRunId(null);
   }, [workTopicId, workChapterId]);
 
-  // Adopt derived run when it appears.
   useEffect(() => {
-    if (derivedRunId) setActiveRunId((prev) => prev ?? derivedRunId);
-  }, [derivedRunId]);
+    if (runs && runs.length > 0) {
+      setActiveRunId((prev) => prev ?? runs[0].id);
+    }
+  }, [runs]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadTopics() {
-      setError(null);
-      try {
-        const q = query(
-          collection(db, "projectSolo", PROJECT_ID, "topics"),
-          orderBy("order", "asc")
-        );
-        const snap = await getDocs(q);
-
+    const topicsRef = collection(db, "projectSolo", PROJECT_ID, "topics");
+    const q = query(topicsRef, orderBy("order", "asc"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
         const rows: Topic[] = snap.docs
           .map((d) => {
             const data = d.data() as TopicDoc;
@@ -150,44 +181,39 @@ export default function Home() {
           })
           .filter((t) => !t.archived);
 
-        if (!cancelled) {
-          setTopics(rows);
-          setActiveTopicId((prev) => (prev ? prev : rows.length ? rows[0].id : null));
-        }
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "Failed to load topics";
-        if (!cancelled) setError(msg);
+        setTopics(rows);
+        setActiveTopicId((prev) => (prev ? prev : rows.length ? rows[0].id : null));
+        setError(null);
+      },
+      (err) => {
+        setError(err.message || "Failed to load topics");
       }
-    }
+    );
 
-    loadTopics();
-    return () => {
-      cancelled = true;
-    };
+    return () => unsub();
   }, []);
 
-  // When topic changes, clear selected chapter so we can choose a sane default after load.
   useEffect(() => {
-    setSelectedChapterId(null);
-  }, [activeTopicId]);
+    const t = topics.find((x) => x.id === activeTopicId);
+    setSelectedChapterId(t?.openChapterId ?? null);
+  }, [activeTopicId, topics]);
 
   useEffect(() => {
-    let cancelled = false;
+    if (!activeTopicId) return;
 
-    async function loadChapters() {
-      setError(null);
-      setChapters([]);
-      if (!activeTopicId) return;
+    const chaptersRef = collection(
+      db,
+      "projectSolo",
+      PROJECT_ID,
+      "topics",
+      activeTopicId,
+      "chapters"
+    );
+    const q = query(chaptersRef, orderBy("createdAt", "desc"), limit(50));
 
-      try {
-        const q = query(
-          collection(db, "projectSolo", PROJECT_ID, "topics", activeTopicId, "chapters"),
-          orderBy("createdAt", "desc"),
-          limit(50)
-        );
-
-        const snap = await getDocs(q);
-
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
         const rows: Chapter[] = snap.docs.map((d) => {
           const data = d.data() as ChapterDoc;
           return {
@@ -195,286 +221,193 @@ export default function Home() {
             title: toStr(data.title, d.id),
             status: toStatus(data.status),
             createdAt: data.createdAt,
-            closedAt: data.closedAt instanceof Timestamp ? data.closedAt : null,
+            closedAt: data.closedAt ?? null,
           };
         });
 
-        if (cancelled) return;
-
         setChapters(rows);
-
-        // Default selection rule:
-        // 1) topic.openChapterId if present
-        // 2) newest chapter (rows[0])
-        // 3) null (will fall back to Inbox)
         const prefer = activeTopic?.openChapterId ?? null;
-        const newest = rows.length ? rows[0].id : null;
-        setSelectedChapterId((prev) => prev ?? prefer ?? newest ?? null);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "Failed to load chapters";
-        if (!cancelled) setError(msg);
+        const openRows = rows.filter((r) => r.status === "open");
+        const preferOpen = prefer && openRows.some((r) => r.id === prefer) ? prefer : null;
+        const newestOpen = openRows.length ? openRows[0].id : null;
+        setSelectedChapterId((prev) => prev ?? preferOpen ?? newestOpen ?? null);
+        setError(null);
+      },
+      (err) => {
+        setError(err.message || "Failed to load chapters");
       }
-    }
+    );
 
-    loadChapters();
-    return () => {
-      cancelled = true;
-    };
+    return () => unsub();
   }, [activeTopicId, activeTopic?.openChapterId]);
 
-  async function createNewChapter() {
-    if (!activeTopicId || !activeTopic) return;
+  useEffect(() => {
+    if (!workTopicId || !workChapterId) return;
+    ensureRun(workTopicId, workChapterId)
+      .then((id) => setActiveRunId((prev) => prev ?? id))
+      .catch(() => {});
+  }, [workTopicId, workChapterId]);
+
+  const handleNewChapter = async () => {
+    if (!activeTopicId) return;
     if (busy) return;
-
     setBusy(true);
-    setError(null);
-
     try {
-      const title = `${activeTopic.title}`;
-
-      const chaptersCol = collection(
-        db,
-        "projectSolo",
-        PROJECT_ID,
-        "topics",
-        activeTopicId,
-        "chapters"
-      );
-
-      const newRef = await addDoc(chaptersCol, {
-        title,
-        topicId: activeTopicId,
-        status: "open",
-        createdAt: serverTimestamp(),
-        closedAt: null,
-      });
-
-      const prevOpenId = activeTopic.openChapterId;
-
-      // We keep "openChapterId" as a convenience pointer, but we DO NOT enforce read-only.
-      if (prevOpenId) {
-        await updateDoc(
-          doc(
-            db,
-            "projectSolo",
-            PROJECT_ID,
-            "topics",
-            activeTopicId,
-            "chapters",
-            prevOpenId
-          ),
-          {
-            status: "closed",
-            closedAt: serverTimestamp(),
-          }
-        );
-      }
-
+      const newId = await createNewChapter(db, activeTopicId);
+      setSelectedChapterId(newId);
       await updateDoc(doc(db, "projectSolo", PROJECT_ID, "topics", activeTopicId), {
-        openChapterId: newRef.id,
+        openChapterId: newId,
+        lastTouchedAt: serverTimestamp(),
       });
-
-      setTopics((prev) =>
-        prev.map((t) =>
-          t.id === activeTopicId ? { ...t, openChapterId: newRef.id } : t
-        )
-      );
-
-      setChapters((prev) => {
-        const bumped = prev.map((c) =>
-          prevOpenId && c.id === prevOpenId ? { ...c, status: "closed" as const } : c
-        );
-        return [
-          { id: newRef.id, title, status: "open", createdAt: null, closedAt: null },
-          ...bumped,
-        ];
-      });
-
-      // Select the new chapter immediately (always usable).
-      setSelectedChapterId(newRef.id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to create chapter";
       setError(msg);
     } finally {
       setBusy(false);
     }
-  }
+  };
+
+  const handleActivatePM = (profile: Record<string, "human" | "hitl" | "agent">) => {
+    setPmAuthorityProfile(profile);
+    setPmActivated(true);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("pmConsoleActivated", "true");
+    }
+    // TODO: ledger write for activation + authority profile
+  };
 
   return (
-    <main className="min-h-screen bg-black text-white">
-      <div className="flex h-screen w-screen gap-4 p-4">
-        {/* Topics lane */}
-        <aside className="w-[260px] rounded-2xl border border-neutral-800/60 bg-neutral-950/40 p-4">
-          <div className="mb-3 text-sm font-semibold tracking-wide text-neutral-200">
-            ProjectSolo
-          </div>
+    <main className="relative flex flex-col h-screen w-full bg-transparent text-[var(--text-blue)] overflow-hidden">
+      {/* HEADER LOCKED: h-24 */}
+      <header className="h-24 border-b border-white/10 grid grid-cols-[18rem_1fr_auto] items-center pl-0 pr-10 shrink-0">
+        <div className="flex items-center justify-center w-[18rem]">
+          <ProjectSoloLogo className="h-20 w-auto text-[var(--text-blue)] opacity-90" />
+        </div>
+        <div className="text-[12px] font-bold tracking-[0.4em] uppercase text-[var(--text-blue)]">
+          / {breadcrumb}
+        </div>
+        <div className="flex items-center gap-3 justify-self-end">
+          <button
+            className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--text-blue)]"
+            onClick={() => setPmOpen(true)}
+          >
+            PM Board
+          </button>
+          <button
+            className="bg-white text-black px-6 py-2 rounded-full font-bold text-[10px] tracking-widest uppercase soft-elevate disabled:opacity-60"
+            onClick={handleNewChapter}
+            disabled={!activeTopicId || busy}
+          >
+            {busy ? "Creating..." : "New Chapter"}
+          </button>
+        </div>
+      </header>
 
+      <div className="flex flex-1 min-h-0">
+        <div className="w-72 border-r border-white/10">
+          <Sidebar
+            activeTopicId={activeTopicId}
+            onSelectTopic={setActiveTopicId}
+            topics={
+              topics.length
+                ? topics.map((t) => ({
+                    id: t.id,
+                    title: t.title,
+                    isCore: t.id === "runway" || t.id === "partner" || t.id === "kids",
+                  }))
+                : []
+            }
+          />
+        </div>
+
+        <div className="flex-1 flex flex-col bg-transparent">
           {error ? (
-            <div className="rounded-lg bg-red-950/40 p-3 text-sm text-red-200">
-              {error}
-            </div>
+            <div className="px-12 pt-6 text-sm text-red-300">{error}</div>
           ) : null}
-
-          <div className="space-y-1">
-            {topics.map((t) => {
-              const active = t.id === activeTopicId;
-              const isCore = t.id === "runway" || t.id === "partner" || t.id === "kids";
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setActiveTopicId(t.id)}
-                  className={[
-                    "w-full rounded-xl px-3 py-2 text-left text-sm transition",
-                    active
-                      ? "bg-white text-black"
-                      : "bg-neutral-800/40 text-neutral-200 hover:bg-neutral-800/70",
-                  ].join(" ")}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">{t.title}</span>
-                    {isCore ? (
-                      <span className="ml-2 rounded-full bg-neutral-700/60 px-2 py-0.5 text-[10px] text-neutral-200">
-                        core
-                      </span>
-                    ) : null}
-                  </div>
-                </button>
-              );
-            })}
+          <div className="px-12 pt-4 text-xs uppercase tracking-[0.28em] text-[var(--text-blue)]">
+            {breadcrumb}
           </div>
-
-          <div className="mt-4 text-xs text-neutral-400">
-            Loaded {topics.length} topics from Firestore.
-          </div>
-        </aside>
-
-        {/* Chat */}
-        <section className="flex min-w-0 flex-1 overflow-hidden rounded-2xl border border-neutral-800/60 bg-neutral-950/30">
-          <div className="flex min-w-0 flex-1 flex-col">
-            <header className="border-b border-neutral-800/60 bg-black/40 px-6 py-4">
-              <div className="text-xs text-neutral-400">Chat</div>
-              <div className="mt-1 text-sm font-semibold text-neutral-100">
-                {(activeTopic ? activeTopic.title : "Inbox")}
-                {" / "}
-                {(selectedChapterId ?? INBOX.chapterId)}
-              </div>
-            </header>
-
-            <div className="flex min-h-0 flex-1 flex-col">
-              <ActiveRun
-                topicId={workTopicId}
-                chapterId={workChapterId}
-                activeRunId={activeRunId}
-                onRunStarted={setActiveRunId}
-              />
-              <div className="min-h-0 flex-1 overflow-hidden">
-                <MessageList
-                  topicId={workTopicId}
-                  chapterId={workChapterId}
-                  runId={(activeRunId ?? derivedRunId) ?? undefined}
-                />
-              </div>
-              <MessageComposer
-                topicId={workTopicId}
-                chapterId={workChapterId}
-                runId={(activeRunId ?? derivedRunId) ?? undefined}
+          <MessageList
+              topicId={workTopicId ?? INBOX.topicId}
+              runId={activeRunId ?? ''}
+              promotePersona={activePersona.name}
+              promoteJobTitle={activePersona.jobTitle}
+            />
+          
+          <div className="px-12 pb-10 flex flex-col gap-6 pt-4">
+            <MessageComposer 
+              topicId={workTopicId ?? INBOX.topicId} 
+              runId={activeRunId ?? ''} 
+              activePersona={activePersona} 
+              activeEngine={activeEngine}
+              onMessageSent={handleIntentDetection} 
+            />
+            
+            <div className={`h-px w-full transition-colors duration-500 ${isSwitching ? 'bg-white' : 'bg-white/10'}`} />
+            
+            <div className={`transition-all duration-500 ${isSwitching ? 'scale-[1.02] opacity-50' : ''}`}>
+              <AgentDirective 
+                activePersona={activePersona} 
+                activeEngine={activeEngine}
+                onPersonaChange={setActivePersona}
+                onEngineChange={setActiveEngine}
               />
             </div>
           </div>
+        </div>
 
-          <div className="w-[260px] border-l border-neutral-800/60">
-            <header className="border-b border-neutral-800/60 bg-black/40 px-6 py-4">
-              <div className="text-xs text-neutral-400">Chapters</div>
-              <div className="mt-1 text-base font-semibold text-neutral-100">{activeTopic ? activeTopic.title + " — Chapters" : "Chapters"}</div>
-            </header>
-
-            <div className="p-6">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-neutral-200">Chapters</div>
-
-                <button
-                  type="button"
-                  onClick={createNewChapter}
-                  disabled={!activeTopicId || busy}
-                  className={[
-                    "rounded-xl px-3 py-2 text-sm font-semibold transition",
-                    !activeTopicId || busy
-                      ? "bg-neutral-800/40 text-neutral-500"
-                      : "bg-white text-black hover:bg-neutral-200",
-                  ].join(" ")}
-                >
-                  {busy ? "Creating…" : "New chapter"}
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {chapters.length === 0 ? (
-                  <div className="rounded-xl bg-neutral-950/40 p-4 text-sm text-neutral-300">
-                    No chapters yet for this topic.
-                  </div>
-                ) : (
-                  chapters.map((c, idx) => {                    const isSelected = selectedChapterId === c.id;
-
-                    const displayTitle = chapterDisplayTitle(c.title, idx);
-                    const createdLabel = formatCreatedAt(c.createdAt);
-
-                    return (
-                      <div
-                        key={c.id}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setSelectedChapterId(c.id)}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedChapterId(c.id); } }}
-                        className={[
-                          "w-full rounded-xl px-3 py-2 text-left text-sm transition",
-                          isSelected
-                            ? "bg-white text-black"
-                            : "bg-neutral-800/40 text-neutral-200 hover:bg-neutral-800/70",
-                        ].join(" ")}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="font-medium text-neutral-100">
-                            <ChapterTitle
-                              topicId={activeTopicId as string}
-                              chapterId={c.id}
-                              title={displayTitle}
-                              disabled={!activeTopicId}
-                              onRenamed={(nextTitle) => {
-                                setChapters((prev) =>
-                                  prev.map((x) =>
-                                    x.id === c.id ? { ...x, title: nextTitle } : x
-                                  )
-                                );
-                              }}
-                            />
-                          </div>
-
-                          <div className="flex items-center gap-2">                          </div>
-                        </div>
-
-                        {createdLabel ? (
-                          <div className="mt-1 text-xs text-neutral-400">
-                            {createdLabel}
-                          </div>
-                        ) : null}
-
-                        
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
+        <div className="w-72 border-l border-white/10">
+          <ChapterList 
+            chapters={openChapters} 
+            activeChapterId={selectedChapterId ?? undefined} 
+            onSelectChapter={setSelectedChapterId}
+            onRenameChapter={async (id, title) => {
+              if (!activeTopicId) return;
+              await renameChapter({ topicId: activeTopicId, chapterId: id, title });
+            }}
+            onDeleteChapter={async (chapterId) => {
+              if (!activeTopicId) return;
+              if (activeTopicId === INBOX.topicId && chapterId === INBOX.chapterId) return;
+              const otherOpen = openChapters.filter((c) => c.id !== chapterId)[0]?.id ?? null;
+              await deleteChapter({ topicId: activeTopicId, chapterId });
+              if (activeTopic?.openChapterId === chapterId) {
+                await updateDoc(doc(db, "projectSolo", PROJECT_ID, "topics", activeTopicId), {
+                  openChapterId: otherOpen,
+                  lastTouchedAt: serverTimestamp(),
+                });
+              }
+              setSelectedChapterId((prev) => (prev === chapterId ? otherOpen : prev));
+            }}
+          />
+        </div>
       </div>
+
+      <PMConsole
+        open={pmOpen}
+        onClose={() => setPmOpen(false)}
+        scope={{
+          scopeType: "topic",
+          scopeId: workTopicId,
+          displayName: activeTopic?.title ?? "Inbox",
+        }}
+        topics={topics.map((t) => ({ id: t.id, title: t.title }))}
+        onScopeChange={(scope) => setActiveTopicId(scope.scopeId)}
+        activated={pmActivated}
+        onActivate={handleActivatePM}
+        authorityProfile={pmAuthorityProfile}
+        onAuthorityChange={setPmAuthorityProfile}
+        chatOpen={pmChatOpen}
+        onToggleChat={() => setPmChatOpen((prev) => !prev)}
+        agentOptions={PERSONAS.map((p) => ({ id: p.id, label: `${p.name} / ${p.jobTitle}` }))}
+        engineOptions={LLM_ENGINES.map((e) => ({ id: e, label: e.toUpperCase() }))}
+        activeAgentId={activePersona.id}
+        activeEngineId={activeEngine}
+        onAgentChange={(id) => {
+          const next = PERSONAS.find((p) => p.id === id);
+          if (next) setActivePersona(next);
+        }}
+        onEngineChange={(id) => setActiveEngine(id as LLMEngine)}
+      />
     </main>
   );
 }
-
-/* TEMP: perl patch failed due to escaping; apply manually using VS Code.
-   Insert the following block right after:
-     const [busy, setBusy] = useState(false);
-   and replace the chat header chapter-id interpolation with {selectedChapterDisplay}.
-*/

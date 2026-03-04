@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { createRun } from "@/lib/runs/createRun";
+import { ensureRun } from "@/lib/runs/ensureRun";
 import { useRuns } from "@/lib/runs/useRuns";
 
 type ActiveRunProps = {
@@ -31,10 +31,7 @@ export function ActiveRun(props: ActiveRunProps) {
     creatingRef.current = true;
 
     (async () => {
-      const runId = await createRun({
-        topicId: topicId as string,
-        chapterId: chapterId as string,
-      });
+      const runId = await ensureRun(topicId as string, chapterId as string);
       onRunStarted?.(runId);
     })();
   }, [enabled, runs, activeRunId, topicId, chapterId, onRunStarted]);

@@ -1,42 +1,38 @@
-import { collection, doc, serverTimestamp, setDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase/client";
+import { db } from "../firebase/client";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
-export type AppendMessageInput = {
-  topicId: string;
-  chapterId: string;
+export const appendMessage = async ({
+  runId,
+  text,
+  authorType,
+  topicId,
+}: {
   runId: string;
-  role: "human";
-  content: string;
-};
+  text: string;
+  authorType: "human" | "agent";
+  topicId?: string;
+}) => {
+  if (!runId) {
+    throw new Error("appendMessage: runId is required");
+  }
 
-export async function appendMessage(input: AppendMessageInput) {
-  const { topicId, chapterId, runId, role, content } = input;
-
-  const messagesRef = collection(
-    db,
-    "projectSolo",
-    "default",
-    "topics",
-    topicId,
-    "chapters",
-    chapterId,
-    "runs",
+  console.log("📝 FLAT MESSAGE WRITE:", {
+    collection: "messages",
     runId,
-    "messages"
-  );
-
-  const messageRef = doc(messagesRef);
-
-  await setDoc(messageRef, {
-    id: messageRef.id,
-    topicId,
-    chapterId,
-    runId,
-    role,
-    content,
-    createdAt: serverTimestamp(),
-    meta: null,
+    authorType,
+    textLength: text?.length,
   });
 
-  return messageRef.id;
-}
+  const docRef = await addDoc(collection(db, "messages"), {
+    runId,
+    text,
+    authorType,
+    topicId: topicId ?? "runway",
+    createdAt: serverTimestamp(),
+  });
+
+  // Agent is only summoned from MessageComposer (single path: human → Firestore → /api/agent → agent reply write).
+  // Callers that use appendMessage for human messages must call /api/agent separately if they want a reply.
+
+  return docRef;
+};

@@ -6,6 +6,7 @@ import type { Firestore } from "firebase/firestore";
 const PROJECT_ID = "default";
 
 // System fallback context (always-on chat).
+// Serves as the default "scratch" run when no topic is selected (work lane always visible).
 // NOTE: This should NOT show up as a normal user topic in the left rail.
 const INBOX_TOPIC_ID = "inbox";
 const INBOX_CHAPTER_ID = "inbox";

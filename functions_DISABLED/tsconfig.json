@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "noImplicitAny": true,
+    "removeComments": true,
+    "preserveConstEnums": true,
+    "sourceMap": true,
+    "outDir": "lib",
+    "target": "es2020",
+    "lib": ["es2020"],
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "rootDir": "..",
+    "baseUrl": "."
+  },
+  "include": [
+    "src/**/*",
+    "../p0/**/*"
+  ]
+}

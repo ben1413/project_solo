@@ -1,88 +1,107 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { Timestamp } from "firebase/firestore";
-import { useMessages } from "@/lib/messages/useMessages";
+import React, { useEffect, useRef, useState } from 'react';
+import { useMessages } from '@/hooks/useMessages';
+import { promoteToMemory, notifyP0Promote } from '@/lib/promoteMemory';
+import { StreamingText } from './StreamingText';
 
-type MessageListProps = {
-  topicId?: string;
-  chapterId?: string;
-  runId?: string;
-};
+interface MessageListProps {
+  topicId: string;
+  runId: string;
+  promotePersona?: string;
+  promoteJobTitle?: string;
+}
 
-function formatCreatedAt(v: unknown): string | null {
-  if (v instanceof Timestamp) {
+export const MessageList = ({ topicId, runId, promotePersona, promoteJobTitle }: MessageListProps) => {
+  const messages = useMessages(topicId, runId);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const [lastContext, setLastContext] = useState(`${topicId}-${runId}`);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  const [promotingId, setPromotingId] = useState<string | null>(null);
+
+  const handlePromote = async (m: { id: string; text: string }) => {
+    if (promotingId) return;
+    setPromotingId(m.id);
     try {
-      return v.toDate().toLocaleString();
-    } catch {
-      return null;
+      await promoteToMemory({
+        topicId,
+        runId,
+        sourceMessageId: m.id,
+        text: m.text,
+        promotedByPersona: promotePersona,
+        promotedByJobTitle: promoteJobTitle,
+      });
+      await notifyP0Promote({
+        runId,
+        text: m.text,
+        persona: promotePersona,
+        jobTitle: promoteJobTitle,
+      });
+    } catch (err) {
+      console.error("[Promote]:", err);
+    } finally {
+      setPromotingId(null);
     }
+  };
+
+  if (`${topicId}-${runId}` !== lastContext) {
+    setLastContext(`${topicId}-${runId}`);
+    setShouldAutoScroll(true);
   }
-  return null;
-}
-
-function roleLabel(role: unknown): string {
-  return role === "assistant" ? "Assistant" : "You";
-}
-
-export function MessageList(props: MessageListProps) {
-  const { topicId, chapterId, runId } = props;
-  const { messages, enabled } = useMessages({ topicId, chapterId, runId });
-
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-
-    // Only autoscroll if user is already near the bottom.
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-    if (nearBottom) {
-      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (shouldAutoScroll && bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages]);
+  }, [messages, shouldAutoScroll]);
 
   return (
-    <div
-      ref={containerRef}
-      className="flex min-h-0 flex-1 flex-col overflow-auto p-4"
-    >
-      {!enabled ? (
-        <div className="text-sm text-neutral-500">Preparing run…</div>
-      ) : !messages || messages.length === 0 ? (
-        <div className="text-sm text-neutral-500">No messages yet.</div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {messages.map((m) => {
-            const role = (m as unknown as { role?: unknown }).role;
-            const isAssistant = role === "assistant";
-            const when = formatCreatedAt(
-              (m as unknown as { createdAt?: unknown }).createdAt
-            );
-
-            return (
-              <div
-                key={m.id}
-                className={[
-                  "rounded-xl border px-3 py-2 text-sm whitespace-pre-wrap",
-                  isAssistant
-                    ? "border-neutral-700/60 bg-neutral-900/50 text-neutral-100"
-                    : "border-neutral-800/60 bg-neutral-950/30 text-neutral-100",
-                ].join(" ")}
-              >
-                <div className="mb-1 flex items-center justify-between text-[11px] text-neutral-400">
-                  <span className="font-medium">{roleLabel(role)}</span>
-                  {when ? <span>{when}</span> : <span />}
-                </div>
-                <div>{m.content}</div>
-              </div>
-            );
-          })}
+    <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar bg-transparent">
+      {messages.length === 0 ? (
+        <div className="flex flex-col items-center justify-center min-h-[200px] text-center px-6">
+          <p className="text-[13px] font-medium tracking-[0.2em] uppercase text-[var(--text-blue)]/80 mb-2">
+            This run is empty
+          </p>
+          <p className="text-[12px] text-[var(--text-blue)]/60 max-w-[280px]">
+            Send a message below to start the conversation. It will persist across refreshes.
+          </p>
         </div>
+      ) : (
+        <>
+      {messages.map((m, i) => (
+        <div key={m.id || i} className={`flex ${m.authorType === 'human' ? 'justify-end' : 'justify-start'}`}>
+          <div className={`max-w-[80%] ${m.authorType === 'human' ? 'text-right' : 'text-left'}`}>
+            <div className="text-[10px] font-bold tracking-[0.25em] uppercase mb-3 text-[var(--text-blue)]">
+              {m.authorType === 'human' ? 'You' : 'Scribe'}
+            </div>
+            <div className={`px-5 py-4 rounded-2xl border soft-elevate ${
+              m.authorType === 'human'
+                ? 'bg-white/10 text-[var(--text-blue)] border-white/10 rounded-tr-none'
+                : 'bg-[var(--panel)] text-[var(--text-blue)] border-white/10 rounded-tl-none'
+            }`}>
+              <div className="leading-relaxed whitespace-pre-wrap text-[15px]">
+                <StreamingText 
+                  text={m.text} 
+                  isNew={i === messages.length - 1 && m.authorType === 'agent'} 
+                />
+              </div>
+              <div className={`mt-2 flex ${m.authorType === 'human' ? 'justify-end' : 'justify-start'}`}>
+                <button
+                  type="button"
+                  onClick={() => handlePromote(m)}
+                  disabled={promotingId === m.id}
+                  className="text-[10px] uppercase tracking-wider text-[var(--text-blue)]/50 hover:text-[var(--text-blue)]/80 disabled:opacity-50"
+                >
+                  {promotingId === m.id ? '…' : 'Promote'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+        </>
       )}
-
-      <div ref={endRef} />
+      <div ref={bottomRef} className="h-4" />
     </div>
   );
-}
+};
